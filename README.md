@@ -55,7 +55,7 @@ I followed the **CRISP-DM** methodology for this project:
 The model identified **5 distinct customer segments**:
 
 > **[Insert your segmentation graph image here]**
-> ![Customer Segments](segmentation_plot.png)
+> ![Customer Segments](segmentation_result.png)
 
 | Segment Name | Profile Description | Marketing Strategy |
 | :--- | :--- | :--- |
