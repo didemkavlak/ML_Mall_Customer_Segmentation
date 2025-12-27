@@ -1,0 +1,226 @@
+import pandas as pd
+import numpy as np
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler
+
+from sklearn.cluster import KMeans
+import plotly.express as px
+
+# 1: Veri setini oku
+
+df_b = pd.read_csv("Mall_Customers.csv")
+
+
+# CustomerID analitik anlam taşımadığı için çıkarılır
+df=df_b.drop(columns=["CustomerID"])
+
+df.info()
+
+#2 : Veri Analizi
+
+plt.figure()
+sns.histplot(data = df, x ="Age", y = "Spending Score (1-100)")
+plt.show()
+# Gözlem: Harcama skorları özellikle 20–40 yaş aralığında yoğunlaşmaktadır.
+
+sns.scatterplot(data = df, x ="Annual Income (k$)", y = "Spending Score (1-100)")
+plt.show()
+# Gözlem: Görsel olarak yaklaşık 5 farklı müşteri grubu oluştuğu sezilmektedir
+
+sns.scatterplot(data = df, x ="Annual Income (k$)", y = "Spending Score (1-100)", hue="Gender")
+plt.show()
+
+# Gözlem: Belirgin bir cinsiyet baskınlığı görülmemektedir.
+
+sns.boxplot(data = df, x="Gender", y="Annual Income (k$)")
+plt.show()
+
+# Gözlem: Gelir dağılımı cinsiyetler arasında benzer.
+
+df["AgeGroup"] = (df["Age"] // 10) * 10
+
+sns.barplot( data=df, x="AgeGroup", y="Annual Income (k$)")
+plt.show()
+
+sns.barplot( data=df, x="AgeGroup", y="Spending Score (1-100)")
+plt.show()
+
+# Gözlem: Yaş grupları ile gelir ve harcama skoru arasındaki ilişki 
+
+#3 : Verinin Hazırlanması
+
+# Cinsiyet için One-Hot Encoding
+df_encoded = pd.get_dummies(df, columns=["Gender"], drop_first= True)
+df_encoded.head(10)
+
+# Feature Selection (Öznitelik Seçimi) : Model için en ayırt edici iki özelliği seçiyoruz: Gelir ve Skor
+X = df_encoded[['Annual Income (k$)', 'Spending Score (1-100)']].values
+
+# Scaling (Ölçeklendirme) 
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+print("\nÖlçeklendirilmiş Veri (İlk 5 Satır):")
+print(X_scaled[:5])
+
+#4 : Modelleme
+
+#Optimum Küme Sayısını Bulma (Elbow Method / Dirsek Yöntemi)
+
+wcss = []
+
+for i in range (1,11):
+    kmeans = KMeans(n_clusters=i, init="k-means++", random_state=42)
+    kmeans.fit(X_scaled)
+    wcss.append(kmeans.inertia_)
+
+plt.figure(figsize=(10,5))
+plt.plot(range(1, 11), wcss, marker='o', linestyle='--')
+plt.title('Elbow Method (Dirsek Yöntemi)')
+plt.xlabel('Küme Sayısı (K)')
+plt.ylabel('WCSS (Hata)')
+plt.show()
+
+# Gözlem: Grafikte kırılma noktası (dirsek) K=5 noktasındadır.
+
+#Modelin Kurulması
+
+kmeans = KMeans(n_clusters=5, init='k-means++', random_state=42)
+
+# Modeli scaled veri üzerinde çalıştırıp tahminleri alalım
+y_kmeans = kmeans.fit_predict(X_scaled)
+
+# Sonuçları görelim
+print("Tahmin edilen etiketler (İlk 10 müşteri):")
+print(y_kmeans[:10])
+
+
+# Okuması kolay olsun diye +1 ekliyorum (Gruplar 1,2,3,4,5 olsun)
+df_encoded['Cluster_No'] = y_kmeans + 1
+
+#%%
+#5 : DEĞERLENDİRME
+
+# SONUÇ VE ÖNERİLER:
+# 1. VIP Müşteriler (Yüksek Gelir - Yüksek Skor): Özel sadakat programları.
+# 2. Standartlar (Orta Gelir - Orta Skor): En kalabalık grup, genel kampanyalar.
+# 3. Tasarruflular (Yüksek Gelir - Düşük Skor): Kalite vurgusu ile harcamaya teşvik.
+# 4. Diğer Gruplar: İndirim odaklı stratejiler.
+
+#Renkli Grafik (Görselleştirme)
+
+centers = df_encoded.groupby('Cluster_No')[['Annual Income (k$)', 'Spending Score (1-100)']].mean()
+
+
+plt.figure(figsize=(14, 8))
+
+
+scatter = plt.scatter(df_encoded['Annual Income (k$)'], 
+            df_encoded['Spending Score (1-100)'], 
+            c=df_encoded['Cluster_No'], 
+            s=50, 
+            cmap='viridis',
+            alpha=0.8) # Noktaları biraz saydam yapalım ki yazılar okunsun
+
+
+for i, row in centers.iterrows():
+    x = row['Annual Income (k$)']
+    y = row['Spending Score (1-100)']
+    
+    
+    if x > 80 and y > 60:
+        label = "VIP (Şampiyonlar)"
+    elif x > 80 and y < 40:
+        label = "Cimri Zenginler\n(Tasarruflu)"
+    elif x < 40 and y > 60:
+        label = "Çılgın Harcayıcılar"
+    elif x < 40 and y < 40:
+        label = "Temkinliler"
+    else:
+        label = "Standart Kitle"
+    
+        plt.text(x, y, label, 
+             horizontalalignment='center', 
+             verticalalignment='center',
+             size=11, weight='bold', color='black',
+             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8)) # Arkasına beyaz kutu koy
+
+
+plt.title('Müşteri Segmentasyonu ve Profil İsimleri', fontsize=16)
+plt.xlabel('Yıllık Gelir (k$)', fontsize=12)
+plt.ylabel('Harcama Skoru (1-100)', fontsize=12)
+plt.colorbar(scatter, label='Küme Numarası')
+plt.grid(True)
+
+plt.show()
+
+
+#Segmentin Toplam Alım Gücü / Gelir Potansiyeli
+
+cluster_means = df_encoded.groupby('Cluster_No')[['Annual Income (k$)', 'Spending Score (1-100)']].mean()
+
+
+def get_cluster_name(row):
+    income = row['Annual Income (k$)']
+    score = row['Spending Score (1-100)']
+    
+    if income > 80 and score > 60:
+        return "VIP (Şampiyonlar)"
+    elif income > 80 and score < 40:
+        return "Tasarruflu Zenginler"
+    elif income < 40 and score > 60:
+        return "Çılgın Harcayıcılar"
+    elif income < 40 and score < 40:
+        return "Temkinliler"
+    else:
+        return "Standart Kitle"
+
+
+cluster_names = {}
+for index, row in cluster_means.iterrows():
+    cluster_names[index] = get_cluster_name(row)
+
+
+df_encoded['Segment'] = df_encoded['Cluster_No'].map(cluster_names)
+
+
+cluster_summary = df_encoded.groupby('Segment').agg({
+    'Annual Income (k$)': ['count', 'mean', 'sum'],
+    'Spending Score (1-100)': ['mean']
+}).round(2)
+
+cluster_summary.columns = ['Kişi Sayısı', 'Ortalama Gelir', 'Toplam Gelir (Potansiyel)', 'Ortalama Skor']
+
+cluster_summary = cluster_summary.sort_values(by='Kişi Sayısı', ascending=False)
+
+print("--- İsimlendirilmiş Müşteri Tablosu ---")
+print(cluster_summary)
+print("-" * 50)
+
+# 3. ADIM: Grafikleri Çizelim
+fig, axes = plt.subplots(1, 2, figsize=(18, 7)) # Biraz daha genişlettim
+
+# --- 1. GRAFİK: Müşteri Yoğunluğu ---
+sns.countplot(x='Segment', data=df_encoded, palette='viridis', order=df_encoded['Segment'].value_counts().index, ax=axes[0])
+axes[0].set_title('Hangi Segmentte Kaç Müşteri Var?', fontsize=14)
+axes[0].set_xlabel('Müşteri Profili', fontsize=12)
+axes[0].set_ylabel('Kişi Sayısı', fontsize=12)
+axes[0].tick_params(axis='x', rotation=15) # Yazılar sığsın diye hafif eğdik
+
+# --- 2. GRAFİK: Toplam Gelir Payı ---
+income_sum = df_encoded.groupby('Segment')['Annual Income (k$)'].sum()
+
+axes[1].pie(income_sum, 
+            labels=income_sum.index, 
+            autopct='%1.1f%%', 
+            startangle=140, 
+            colors=sns.color_palette('viridis', 5))
+axes[1].set_title('Toplam Gelirin (Alım Gücü) Dağılımı', fontsize=14)
+
+plt.tight_layout()
+plt.show()
+
